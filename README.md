@@ -38,7 +38,7 @@ lockfile conflict when their pull requests are merged.
 
 The child sessions use the
 `playbook-90cdbb371d5a4807babf957b36130aff` playbook
-("Remediate Dependency Vulnerabilities").
+("Remediate a Vulnerability Bucket").
 
 ## Two-step demo
 
