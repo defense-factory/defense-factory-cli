@@ -6,12 +6,29 @@ def test_prompt_contains_repo_table_and_verification():
         column: value
         for column, value in zip(
             orchestrate.CSV_COLUMNS,
-            ["owner/repo", "requirements.txt", "requests", "1", "2", "CVE-1", "HIGH", "7.5", "Title"],
+            [
+                "owner/repo",
+                "requirements.txt",
+                "requests",
+                "1",
+                "2",
+                "CVE-1",
+                "HIGH",
+                "7.5",
+                "Title",
+                "",
+                "",
+                "direct",
+                "fixed",
+                "CWE-1",
+                "2024-01-01",
+                "https://example.com/CVE-1",
+            ],
         )
     }
     prompt = orchestrate.render_prompt("owner/repo", [row])
     assert "Remediate the dependency vulnerabilities in owner/repo" in prompt
-    assert "| repo | path | package |" in prompt
+    assert "| vuln_id | package | installed_version |" in prompt
     assert "CVE-1" in prompt
     assert "fixed and not_fixed per vuln_id" in prompt
 
