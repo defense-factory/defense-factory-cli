@@ -79,23 +79,6 @@ def test_classify_rows_override_and_go_pseudo_version():
     assert classified[1]["fix_type"] == "patch-bump"
 
 
-def test_reclassify_accepts_repeatable_fix_type_override(tmp_path):
-    findings = tmp_path / "findings.csv"
-    scan.write_rows_csv([_row("demo", "1.0.0", "1.0.1")], findings)
-    assert (
-        scan.main(
-            [
-                "--reclassify",
-                str(findings),
-                "--fix-type-override",
-                "demo=package-replacement",
-            ]
-        )
-        == 0
-    )
-    assert scan.read_csv(findings)[0]["fix_type"] == "package-replacement"
-
-
 def test_findings_csv_has_expected_fix_type_groups():
     rows = scan.read_csv("findings.csv")
     groups: dict[tuple[str, str, str], list[dict[str, str]]] = {}
@@ -132,7 +115,7 @@ def test_trivy_normalization_and_fixed_version(monkeypatch):
         stdout = fixture
 
     monkeypatch.setattr(scan.subprocess, "run", lambda *args, **kwargs: Result())
-    findings = scan.scan(".", "owner/repo", "trivy")
+    findings = scan.scan(".", "owner/repo")
 
     assert findings[0].fixed_version == "4.17.19"
     assert findings[0].severity == "HIGH"
@@ -149,25 +132,6 @@ def test_trivy_normalization_and_fixed_version(monkeypatch):
     assert findings[2].start_line == ""
     assert findings[2].end_line == ""
     assert findings[2].relationship == ""
-
-
-def test_snyk_normalization(monkeypatch):
-    fixture = json.dumps(json.load(open("tests/fixtures/snyk_sample.json")))
-
-    class Result:
-        stdout = fixture
-
-    monkeypatch.setattr(scan.subprocess, "run", lambda *args, **kwargs: Result())
-    finding = scan.scan(".", "owner/repo", "snyk")[0]
-
-    assert finding.vuln_id == "CVE-2023-32681"
-    assert finding.fixed_version == "2.31.0"
-    assert finding.path == "requirements.txt"
-    assert finding.relationship == "direct"
-    assert finding.status == "fixed"
-    assert finding.cwe_ids == "CWE-918"
-    assert finding.published == "2023-05-22"
-    assert finding.primary_url.endswith("SNYK-PYTHON-REQUESTS-999")
 
 
 def test_csv_round_trip(tmp_path):

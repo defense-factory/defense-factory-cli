@@ -15,5 +15,4 @@ jobs:
       - run: python -m pip install -r requirements.txt
       - run: pytest
       - run: python scan.py --help
-      - run: python orchestrate.py --help
-      - run: python verify.py --help
+      - run: python kickoff.py --help
