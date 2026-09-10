@@ -2,17 +2,37 @@
   "Results": [
     {
       "Target": "package-lock.json",
+      "Packages": [
+        {
+          "ID": "lodash@4.17.15",
+          "Name": "lodash",
+          "Version": "4.17.15",
+          "Relationship": "direct",
+          "Locations": [{"StartLine": 1204, "EndLine": 1212}]
+        },
+        {
+          "ID": "demo@1.0.0",
+          "Name": "demo",
+          "Version": "1.0.0"
+        }
+      ],
       "Vulnerabilities": [
         {
+          "PkgID": "lodash@4.17.15",
           "PkgName": "lodash",
           "InstalledVersion": "4.17.15",
           "FixedVersion": "4.17.19||4.17.21",
           "VulnerabilityID": "CVE-2020-8203",
           "Severity": "HIGH",
           "CVSS": {"nvd": {"V3Score": 7.4}},
+          "Status": "fixed",
+          "CweIDs": ["CWE-400"],
+          "PublishedDate": "2021-08-31T11:15:07Z",
+          "PrimaryURL": "https://example.com/CVE-2020-8203",
           "Title": "Prototype pollution"
         },
         {
+          "PkgID": "demo@1.0.0",
           "PkgName": "demo",
           "InstalledVersion": "1.0.0",
           "FixedVersion": "",
@@ -20,6 +40,15 @@
           "Severity": "MEDIUM",
           "CVSS": {},
           "Title": "No fixed release"
+        },
+        {
+          "PkgName": "ghost",
+          "InstalledVersion": "9.9.9",
+          "FixedVersion": "",
+          "VulnerabilityID": "CVE-2099-0002",
+          "Severity": "LOW",
+          "CVSS": {},
+          "Title": "No matching package"
         }
       ]
     }

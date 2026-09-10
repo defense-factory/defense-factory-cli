@@ -13,18 +13,21 @@ from pathlib import Path
 from typing import Any
 
 from devin_api import create_session
+from scan import CSV_COLUMNS
 
 
 DEFAULT_PLAYBOOK_ID = "playbook-90cdbb371d5a4807babf957b36130aff"
-CSV_COLUMNS = [
-    "repo",
-    "path",
+PROMPT_COLUMNS = [
+    "vuln_id",
     "package",
     "installed_version",
     "fixed_version",
-    "vuln_id",
     "severity",
     "cvss",
+    "status",
+    "relationship",
+    "path",
+    "start_line",
     "title",
 ]
 SCHEMA_PATH = Path(__file__).with_name("schema.json")
@@ -49,11 +52,11 @@ def render_prompt(repo: str, rows: list[dict[str, str]]) -> str:
             f"to safe compatible versions, preserve the existing behavior, and keep tests green."
         ),
         "",
-        "| " + " | ".join(CSV_COLUMNS) + " |",
-        "| " + " | ".join("---" for _ in CSV_COLUMNS) + " |",
+        "| " + " | ".join(PROMPT_COLUMNS) + " |",
+        "| " + " | ".join("---" for _ in PROMPT_COLUMNS) + " |",
     ]
     for row in rows:
-        lines.append("| " + " | ".join(str(row.get(column, "")).replace("|", "\\|") for column in CSV_COLUMNS) + " |")
+        lines.append("| " + " | ".join(str(row.get(column, "")).replace("|", "\\|") for column in PROMPT_COLUMNS) + " |")
     lines.extend(
         [
             "",

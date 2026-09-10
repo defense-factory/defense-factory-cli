@@ -93,9 +93,20 @@ Both scanners are normalized to this CSV schema, in this exact order:
 | `severity` | normalized uppercase severity |
 | `cvss` | preferred CVSS v3 score |
 | `title` | scanner finding title |
+| `start_line` | first line of the vulnerable package declaration, when available |
+| `end_line` | last line of the vulnerable package declaration, when available |
+| `relationship` | direct, indirect, root, or blank when unavailable |
+| `status` | scanner status such as `fixed` or `affected` |
+| `cwe_ids` | semicolon-separated CWE identifiers |
+| `published` | advisory publication date |
+| `primary_url` | primary advisory URL |
 
 Findings are deduplicated by `(path, package, vuln_id)`. Scanner findings
 produce CSV rows; scanner execution failures return a nonzero exit status.
+Trivy supplies line numbers for npm and pip dependencies, supplies them for
+Maven dependencies declared directly in `pom.xml`, and does not supply them
+for Go modules. Blank Go or Maven-transitive `start_line`/`end_line` values
+are therefore expected rather than a scanning error.
 
 ## Devin structured output
 

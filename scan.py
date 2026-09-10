@@ -24,6 +24,13 @@ CSV_COLUMNS = [
     "severity",
     "cvss",
     "title",
+    "start_line",
+    "end_line",
+    "relationship",
+    "status",
+    "cwe_ids",
+    "published",
+    "primary_url",
 ]
 DEFAULT_TRIVY_DB = "ghcr.io/aquasecurity/trivy-db"
 
@@ -39,6 +46,13 @@ class Finding:
     severity: str
     cvss: str
     title: str
+    start_line: str
+    end_line: str
+    relationship: str
+    status: str
+    cwe_ids: str
+    published: str
+    primary_url: str
 
     def as_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -90,10 +104,46 @@ def _path(value: Any) -> str:
     return str(value or "")
 
 
+def _package_index(result: dict[str, Any]) -> tuple[dict[str, dict[str, Any]], dict[tuple[str, str], dict[str, Any]]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    by_name_version: dict[tuple[str, str], dict[str, Any]] = {}
+    for package in result.get("Packages") or []:
+        package_id = package.get("ID")
+        if package_id:
+            by_id[str(package_id)] = package
+        name = package.get("Name")
+        version = package.get("Version")
+        if name is not None and version is not None:
+            by_name_version[(str(name), str(version))] = package
+    return by_id, by_name_version
+
+
+def _package_details(
+    item: dict[str, Any],
+    by_id: dict[str, dict[str, Any]],
+    by_name_version: dict[tuple[str, str], dict[str, Any]],
+) -> tuple[str, str, str]:
+    package = by_id.get(str(item.get("PkgID", "")))
+    if package is None:
+        package = by_name_version.get(
+            (str(item.get("PkgName", "")), str(item.get("InstalledVersion", "")))
+        )
+    if package is None:
+        return "", "", ""
+    locations = package.get("Locations") or []
+    location = locations[0] if locations and isinstance(locations[0], dict) else {}
+    return (
+        str(location.get("StartLine", "") or ""),
+        str(location.get("EndLine", "") or ""),
+        str(package.get("Relationship", "") or ""),
+    )
+
+
 def _trivy_findings(payload: dict[str, Any], repo: str) -> list[Finding]:
     findings = []
     for result in payload.get("Results", []):
         target = _path(result.get("Target"))
+        by_id, by_name_version = _package_index(result)
         for item in result.get("Vulnerabilities") or []:
             fixed, parse_failed = _fixed_version(
                 item.get("FixedVersion"), str(item.get("InstalledVersion", ""))
@@ -101,6 +151,11 @@ def _trivy_findings(payload: dict[str, Any], repo: str) -> list[Finding]:
             title = str(item.get("Title", ""))
             if parse_failed and item.get("FixedVersion"):
                 title = f"{title} [fixed: {item['FixedVersion']}]".strip()
+            start_line, end_line, relationship = _package_details(
+                item, by_id, by_name_version
+            )
+            cwe_ids = ";".join(str(value) for value in (item.get("CweIDs") or []))
+            published = str(item.get("PublishedDate") or "")[:10]
             findings.append(
                 Finding(
                     repo=repo,
@@ -112,6 +167,13 @@ def _trivy_findings(payload: dict[str, Any], repo: str) -> list[Finding]:
                     severity=str(item.get("Severity", "UNKNOWN")).upper(),
                     cvss=_cvss(item.get("CVSS")),
                     title=title,
+                    start_line=start_line,
+                    end_line=end_line,
+                    relationship=relationship,
+                    status=str(item.get("Status") or ""),
+                    cwe_ids=cwe_ids,
+                    published=published,
+                    primary_url=str(item.get("PrimaryURL") or ""),
                 )
             )
     return findings
@@ -142,6 +204,12 @@ def _snyk_findings(payload: dict[str, Any], repo: str) -> list[Finding]:
         title = str(item.get("title", ""))
         if parse_failed and _snyk_fixed(item):
             title = f"{title} [fixed: {_snyk_fixed(item)}]".strip()
+        from_field = item.get("from")
+        relationship = ""
+        if "from" in item:
+            relationship = "direct" if len(from_field or []) <= 2 else "indirect"
+        identifiers = item.get("identifiers") or {}
+        cwe_ids = ";".join(str(value) for value in (identifiers.get("CWE") or []))
         findings.append(
             Finding(
                 repo=repo,
@@ -153,6 +221,13 @@ def _snyk_findings(payload: dict[str, Any], repo: str) -> list[Finding]:
                 severity=str(item.get("severity", "UNKNOWN")).upper(),
                 cvss=str(item.get("cvssScore", "")),
                 title=title,
+                start_line="",
+                end_line="",
+                relationship=relationship,
+                status="fixed" if _snyk_fixed(item) else "affected",
+                cwe_ids=cwe_ids,
+                published=str(item.get("publicationTime") or "")[:10],
+                primary_url=str(item.get("url") or ""),
             )
         )
     return findings
@@ -181,6 +256,7 @@ def scan(repo_path: str | Path, repo: str, scanner: str = "trivy") -> list[Findi
             "fs",
             "--scanners",
             "vuln",
+            "--list-all-pkgs",
             "--format",
             "json",
             "--quiet",
@@ -199,7 +275,7 @@ def scan(repo_path: str | Path, repo: str, scanner: str = "trivy") -> list[Findi
 
 def write_csv(findings: Iterable[Finding], output: str | Path) -> None:
     with open(output, "w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=CSV_COLUMNS)
+        writer = csv.DictWriter(stream, fieldnames=CSV_COLUMNS, lineterminator="\n")
         writer.writeheader()
         writer.writerows(finding.as_dict() for finding in findings)
 
@@ -224,10 +300,20 @@ def main(argv: list[str] | None = None) -> int:
     scanner = args.scanner or os.environ.get("SCANNER", "trivy")
     findings = scan(args.repo_path, args.repo, scanner)
     if args.append and Path(args.out).exists():
-        existing = [
-            Finding(**row)
-            for row in read_csv(args.out)
-        ]
+        with open(args.out, newline="", encoding="utf-8") as stream:
+            reader = csv.DictReader(stream)
+            fieldnames = set(reader.fieldnames or [])
+            missing_columns = [column for column in CSV_COLUMNS if column not in fieldnames]
+            if missing_columns:
+                raise ValueError(
+                    f"Cannot append to stale findings CSV {args.out}; regenerate it with the current scan.py"
+                )
+            try:
+                existing = [Finding(**row) for row in reader]
+            except TypeError as exc:
+                raise ValueError(
+                    f"Cannot append to stale findings CSV {args.out}; regenerate it with the current scan.py"
+                ) from exc
         findings = _deduplicate(existing + findings)
     write_csv(findings, args.out)
     print(f"{args.repo}: {len(findings)} findings written to {args.out}")
