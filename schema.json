@@ -18,6 +18,7 @@
               "package-replacement"
             ]
           },
+          "scope": {"type": "string"},
           "pr_url": {"type": "string"},
           "branch": {"type": "string"},
           "fixed": {
@@ -42,6 +43,7 @@
         },
         "required": [
           "fix_type",
+          "scope",
           "pr_url",
           "branch",
           "fixed",

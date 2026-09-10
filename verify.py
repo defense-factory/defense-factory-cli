@@ -86,6 +86,7 @@ def _match_state_group(
         for group in groups:
             if group.get("fix_type") == fix_type and group.get("scope") == scope:
                 return group
+        return None
     claimed = set(entry.get("fixed") or []) | set(_not_fixed_ids([entry]))
     candidates = [
         group
@@ -325,7 +326,7 @@ def run(
                     "vuln_ids": group_ids,
                     "structured": entry,
                     "reconciliation": reconciliation,
-                    "new_findings": sorted(set(scanned_ids) - set(group_ids)),
+                    "new_findings": sorted(set(scanned_ids) - set(input_ids)),
                 }
             )
     write_report(results, report, discrepancies, repo_totals, repo_absent)

@@ -134,6 +134,7 @@ Every session is asked to return:
   "pull_requests": [
     {
       "fix_type": "patch-bump",
+      "scope": "requirements.txt",
       "pr_url": "https://github.com/owner/name/pull/1",
       "branch": "remediation-branch",
       "fixed": ["CVE-2023-32681"],

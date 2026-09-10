@@ -64,6 +64,20 @@ def test_fix_type_groups_patch_first_and_deterministic():
     ]
 
 
+def test_fix_type_groups_preserves_existing_classification():
+    row = {
+        "repo": "owner/repo",
+        "path": "requirements.txt",
+        "package": "demo",
+        "installed_version": "1.0.0",
+        "fixed_version": "2.0.0",
+        "fix_type": "patch-bump",
+        "vuln_id": "CVE-1",
+        "severity": "HIGH",
+    }
+    assert orchestrate.fix_type_groups([row])[0][0] == "patch-bump"
+
+
 def test_dry_run_does_not_create_sessions(tmp_path, monkeypatch, capsys):
     findings = tmp_path / "findings.csv"
     findings.write_text(

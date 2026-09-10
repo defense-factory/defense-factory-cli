@@ -62,7 +62,7 @@ def group_findings(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]
 def fix_type_groups(
     rows: list[dict[str, str]],
 ) -> list[tuple[str, str, list[dict[str, str]]]]:
-    classified = classify_rows(rows)
+    classified = rows if all(row.get("fix_type") for row in rows) else classify_rows(rows)
     grouped: dict[tuple[str, str, str], list[dict[str, str]]] = defaultdict(list)
     for row in classified:
         fix_type = row["fix_type"]
@@ -130,7 +130,8 @@ def render_prompt(repo: str, rows: list[dict[str, str]]) -> str:
                 "the same lockfiles. Gate every PR on its own baseline comparison and re-scan; "
                 "do not open a PR while any vuln_id in that group is still present: diagnose, "
                 "fix, and re-scan again, up to 3 attempts. Report each PR in pull_requests[], "
-                "and report no-fix findings at the repository level."
+                "with each entry's fix_type and scope exactly as listed above, and report "
+                "no-fix findings at the repository level."
             ),
             "",
         "| " + " | ".join(PROMPT_COLUMNS) + " |",

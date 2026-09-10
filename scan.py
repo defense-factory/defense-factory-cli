@@ -34,6 +34,24 @@ CSV_COLUMNS = [
     "primary_url",
     "fix_type",
 ]
+APPEND_REQUIRED_COLUMNS = (
+    "repo",
+    "path",
+    "package",
+    "installed_version",
+    "fixed_version",
+    "vuln_id",
+    "severity",
+    "cvss",
+    "title",
+    "start_line",
+    "end_line",
+    "relationship",
+    "status",
+    "cwe_ids",
+    "published",
+    "primary_url",
+)
 DEFAULT_TRIVY_DB = "ghcr.io/aquasecurity/trivy-db"
 FIX_TYPE_OVERRIDES = {
     "github.com/dgrijalva/jwt-go": "package-replacement",
@@ -392,7 +410,7 @@ def main(argv: list[str] | None = None) -> int:
             reader = csv.DictReader(stream)
             fieldnames = set(reader.fieldnames or [])
             missing_columns = [
-                column for column in CSV_COLUMNS[:-1] if column not in fieldnames
+                column for column in APPEND_REQUIRED_COLUMNS if column not in fieldnames
             ]
             if missing_columns:
                 raise ValueError(
