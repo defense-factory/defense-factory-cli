@@ -13,19 +13,18 @@ load_dotenv()
 
 
 DEFAULT_API_BASE = "https://api.devin.ai/v3"
-TERMINAL_STATUSES = {"exit", "error", "suspended"}
 
 
 def _credentials() -> tuple[str, str, str]:
     key = os.environ.get("DEVIN_API_KEY")
     if not key:
         raise RuntimeError(
-            "DEVIN_API_KEY is not set; provide it before creating or polling Devin sessions"
+            "DEVIN_API_KEY is not set; provide it before creating Devin sessions"
         )
     org_id = os.environ.get("DEVIN_ORG_ID")
     if not org_id:
         raise RuntimeError(
-            "DEVIN_ORG_ID is not set; provide it before creating or polling Devin sessions"
+            "DEVIN_ORG_ID is not set; provide it before creating Devin sessions"
         )
     return os.environ.get("DEVIN_API_BASE", DEFAULT_API_BASE).rstrip("/"), key, org_id
 
@@ -81,24 +80,3 @@ def create_session(
         f"/organizations/{org_id}/sessions",
         json={key: value for key, value in payload.items() if value is not None},
     )
-
-
-def get_session(session_id: str) -> dict[str, Any]:
-    _, _, org_id = _credentials()
-    return _request("GET", f"/organizations/{org_id}/sessions/{session_id}")
-
-
-def is_session_done(session: dict[str, Any]) -> bool:
-    """True when polling should stop."""
-    status = session.get("status")
-    if status in TERMINAL_STATUSES:
-        return True
-    return status == "running" and session.get("status_detail") == "finished"
-
-
-def is_session_successful(session: dict[str, Any]) -> bool:
-    """True when the session completed its work rather than dying."""
-    status = session.get("status")
-    if status == "exit":
-        return True
-    return status == "running" and session.get("status_detail") == "finished"

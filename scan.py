@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize Trivy or Snyk dependency findings into the demo CSV contract."""
+"""Normalize Trivy dependency findings into the demo CSV contract."""
 
 from __future__ import annotations
 
@@ -120,7 +120,7 @@ def classify(rows: list[dict[str, str]]) -> dict[tuple[str, str], str]:
 
 
 def group_key(row: dict[str, str], fix_type: str) -> tuple[str, str, str]:
-    """Return the PR unit key for a classified finding row."""
+    """Authoritative triage bucket key mirrored by the triage prompt."""
     if fix_type in ("patch-bump", "parent-uplift"):
         return (row["repo"], fix_type, row["path"])
     return (row["repo"], fix_type, row["package"])
@@ -255,60 +255,6 @@ def _trivy_findings(payload: dict[str, Any], repo: str) -> list[Finding]:
     return findings
 
 
-def _snyk_fixed(item: dict[str, Any]) -> Any:
-    if item.get("fixedIn"):
-        return item["fixedIn"]
-    path = item.get("upgradePath") or []
-    versions = []
-    for step in path:
-        if isinstance(step, list):
-            versions.extend(
-                entry.get("version")
-                for entry in step
-                if isinstance(entry, dict) and entry.get("version")
-            )
-    return versions
-
-
-def _snyk_findings(payload: dict[str, Any], repo: str) -> list[Finding]:
-    findings = []
-    for item in payload.get("vulnerabilities", []):
-        identifiers = item.get("identifiers") or {}
-        vuln_id = (identifiers.get("CVE") or [None])[0] or item.get("id", "")
-        installed = str(item.get("version", ""))
-        fixed, parse_failed = _fixed_version(_snyk_fixed(item), installed)
-        title = str(item.get("title", ""))
-        if parse_failed and _snyk_fixed(item):
-            title = f"{title} [fixed: {_snyk_fixed(item)}]".strip()
-        from_field = item.get("from")
-        relationship = ""
-        if "from" in item:
-            relationship = "direct" if len(from_field or []) <= 2 else "indirect"
-        identifiers = item.get("identifiers") or {}
-        cwe_ids = ";".join(str(value) for value in (identifiers.get("CWE") or []))
-        findings.append(
-            Finding(
-                repo=repo,
-                path=_path(item.get("displayTargetFile")),
-                package=str(item.get("packageName", "")),
-                installed_version=installed,
-                fixed_version=fixed,
-                vuln_id=str(vuln_id),
-                severity=str(item.get("severity", "UNKNOWN")).upper(),
-                cvss=str(item.get("cvssScore", "")),
-                title=title,
-                start_line="",
-                end_line="",
-                relationship=relationship,
-                status="fixed" if _snyk_fixed(item) else "affected",
-                cwe_ids=cwe_ids,
-                published=str(item.get("publicationTime") or "")[:10],
-                primary_url=str(item.get("url") or ""),
-            )
-        )
-    return findings
-
-
 def _deduplicate(findings: Iterable[Finding]) -> list[Finding]:
     result = []
     seen = set()
@@ -320,33 +266,25 @@ def _deduplicate(findings: Iterable[Finding]) -> list[Finding]:
     return result
 
 
-def scan(repo_path: str | Path, repo: str, scanner: str = "trivy") -> list[Finding]:
-    """Run one scanner and return normalized, deduplicated findings."""
+def scan(repo_path: str | Path, repo: str) -> list[Finding]:
+    """Run Trivy and return normalized, deduplicated findings."""
 
-    scanner = scanner.lower()
-    if scanner == "trivy":
-        command = [
-            os.environ.get("TRIVY_BIN", "trivy"),
-            "--db-repository",
-            os.environ.get("TRIVY_DB_REPOSITORY", DEFAULT_TRIVY_DB),
-            "fs",
-            "--scanners",
-            "vuln",
-            "--list-all-pkgs",
-            "--format",
-            "json",
-            "--quiet",
-            str(repo_path),
-        ]
-    elif scanner == "snyk":
-        command = ["snyk", "test", "--json", str(repo_path)]
-    else:
-        raise ValueError(f"unsupported scanner: {scanner}")
+    command = [
+        os.environ.get("TRIVY_BIN", "trivy"),
+        "--db-repository",
+        os.environ.get("TRIVY_DB_REPOSITORY", DEFAULT_TRIVY_DB),
+        "fs",
+        "--scanners",
+        "vuln",
+        "--list-all-pkgs",
+        "--format",
+        "json",
+        "--quiet",
+        str(repo_path),
+    ]
     completed = subprocess.run(command, check=True, capture_output=True, text=True)
     payload = json.loads(completed.stdout)
-    if scanner == "trivy":
-        return _deduplicate(_trivy_findings(payload, repo))
-    return _deduplicate(_snyk_findings(payload, repo))
+    return _deduplicate(_trivy_findings(payload, repo))
 
 
 def write_csv(findings: Iterable[Finding], output: str | Path) -> None:
@@ -372,10 +310,8 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo-path")
     parser.add_argument("--repo")
-    parser.add_argument("--scanner", choices=("trivy", "snyk"), default=None)
     parser.add_argument("--out", default="findings.csv")
     parser.add_argument("--append", action="store_true")
-    parser.add_argument("--reclassify")
     parser.add_argument("--fix-type-override", action="append", default=[])
     return parser
 
@@ -396,15 +332,9 @@ def main(argv: list[str] | None = None) -> int:
         _apply_fix_type_overrides(args.fix_type_override)
     except ValueError as exc:
         _parser().error(str(exc))
-    if args.reclassify:
-        rows = classify_rows(read_csv(args.reclassify))
-        write_rows_csv(rows, args.reclassify)
-        print(f"{len(rows)} findings reclassified in {args.reclassify}")
-        return 0
     if not args.repo_path or not args.repo:
-        _parser().error("--repo-path and --repo are required unless --reclassify is used")
-    scanner = args.scanner or os.environ.get("SCANNER", "trivy")
-    findings = scan(args.repo_path, args.repo, scanner)
+        _parser().error("--repo-path and --repo are required")
+    findings = scan(args.repo_path, args.repo)
     if args.append and Path(args.out).exists():
         with open(args.out, newline="", encoding="utf-8") as stream:
             reader = csv.DictReader(stream)
