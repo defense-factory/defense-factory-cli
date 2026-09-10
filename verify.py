@@ -13,11 +13,8 @@ from typing import Any
 
 import requests
 
-from devin_api import get_session
+from devin_api import get_session, is_session_done, is_session_successful
 from scan import scan
-
-
-TERMINAL_STATUSES = {"finished", "blocked", "expired", "failed", "error"}
 
 
 def reconcile(
@@ -50,9 +47,12 @@ def _pr_number(url: str) -> str:
     return match.group(1) if match else ""
 
 
-def _repo_from_pr(url: str) -> str:
-    match = re.search(r"github\.com/([^/]+/[^/]+)/pull/", url)
-    return match.group(1) if match else ""
+def _pull_request_url(session: dict[str, Any], repo: str) -> str:
+    for pull_request in session.get("pull_requests") or []:
+        url = pull_request.get("pr_url", "")
+        if repo in url:
+            return url
+    return ""
 
 
 def _scan_pr(
@@ -80,12 +80,14 @@ def _poll(
     previous = None
     while True:
         session = get_session(session_id)
-        status = str(session.get("status_enum", "")).lower()
-        if status != previous:
-            print(f"{session_id}: {status}")
-            previous = status
-        if status in TERMINAL_STATUSES:
-            return session, status == "finished"
+        status = session.get("status", "")
+        status_detail = session.get("status_detail", "")
+        state = (status, status_detail)
+        if state != previous:
+            print(f"{session_id}: status={status} status_detail={status_detail}")
+            previous = state
+        if is_session_done(session):
+            return session, is_session_successful(session)
         if time.monotonic() - started >= timeout:
             return session, False
         time.sleep(max(1, poll_interval))
@@ -135,13 +137,17 @@ def run(
     unfinished_sessions = []
     false_claims = []
     for repo, details in state["repos"].items():
-        session, finished = _poll(details["session_id"], poll_interval, timeout)
+        session, successful = _poll(details["session_id"], poll_interval, timeout)
         structured = _structured_output(session)
-        pr_url = structured.get("pr_url") or (session.get("pull_request") or {}).get("url", "")
+        pr_url = structured.get("pr_url") or _pull_request_url(session, repo)
         if not structured and pr_url:
             discrepancies.append(f"{repo}: degraded verification; structured output missing")
-        if not finished:
-            message = f"{repo}: session did not finish ({session.get('status_enum', 'timeout')})"
+        if not successful:
+            message = (
+                f"{repo}: session did not finish "
+                f"(status={session.get('status', 'timeout')}, "
+                f"status_detail={session.get('status_detail', 'n/a')})"
+            )
             discrepancies.append(message)
             unfinished_sessions.append(message)
         if not pr_url:

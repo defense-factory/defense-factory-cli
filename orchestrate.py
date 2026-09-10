@@ -106,7 +106,6 @@ def run_orchestration(
                 tags=["vuln-remediation", name],
                 title=f"Remediate {len(rows)} vulns in {name}",
                 structured_output_schema=schema,
-                idempotent=True,
                 max_acu_limit=max_acu,
             )
             state_repos[repo] = {
@@ -133,7 +132,6 @@ def run_orchestration(
             tags=["vuln-remediation", name],
             title=f"Remediate {len(rows)} vulns in {name}",
             structured_output_schema=schema,
-            idempotent=True,
             max_acu_limit=max_acu,
         )
         state["repos"][repo] = {
