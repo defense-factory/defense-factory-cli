@@ -28,9 +28,16 @@ vulnerability remediation.
 
 - Python 3.9 or newer and the packages in `requirements.txt`
 - Trivy installed and available on `PATH` for offline Trivy scans
-- `DEVIN_API_KEY` for real orchestration and verification
-- Enterprise deployments should set `DEVIN_API_BASE` to their deployment's
-  API base URL; the client defaults to `https://api.devin.ai/v1`.
+- `DEVIN_API_KEY` and `DEVIN_ORG_ID` for real orchestration and verification
+- The client targets Devin API v3 and defaults to
+  `https://api.devin.ai/v3`.
+- Enterprise deployments should set `DEVIN_API_BASE` to
+  `https://<host>/api/v3`; for example,
+  `https://test-aaron.devinenterprise.com/api/v3`.
+
+Devin v3 reports completed work as `status=running` with
+`status_detail=finished`. Terminal `exit` sessions are also successful;
+`error` and `suspended` sessions are treated as unfinished by verification.
 
 The default Devin playbook is
 `playbook-90cdbb371d5a4807babf957b36130aff` (“Remediate Dependency
@@ -116,8 +123,8 @@ Every session is asked to return:
 
 `verify.py` treats this as a claim, fetches the PR branch, rescans it, and
 reports false claims or unfinished sessions. If structured output is absent,
-it falls back to the session's `pull_request.url` and marks the verification
-as degraded in the discrepancies section.
+it falls back to the matching `pull_requests[].pr_url` entry and marks the
+verification as degraded in the discrepancies section.
 
 ## Talk track
 
