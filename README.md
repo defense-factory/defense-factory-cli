@@ -152,11 +152,13 @@ Every session is asked to return:
 Each remediation session reports one entry in `pull_requests[]` per PR group;
 the branches are stacked in the same order as the plan. The playbook gates PR
 creation on a clean re-scan against each baseline, retrying up to 3 attempts,
-and reports the number of attempts in `rescan_attempts`. `verify.py`
-independently fetches every PR branch, rescans it, and reports false claims,
-coverage gaps, or unfinished sessions. If structured output is absent, it
-supports the legacy single `pr_url` shape and marks verification as degraded
-in the discrepancies section.
+and reports the number of attempts in each PR's `rescan_attempts`. For every
+attempt, the playbook writes a `scan-attempt-<n>.json` artifact and prints a
+per-vulnerability verdict of `resolved`, `still-present`, or `unfixable`.
+`verify.py` independently fetches every PR branch, rescans it, and reports
+false claims, coverage gaps, or unfinished sessions. If structured output is
+absent, it supports the legacy single `pr_url` shape and marks verification as
+degraded in the discrepancies section.
 
 ## Talk track
 

@@ -33,6 +33,7 @@ def test_prompt_contains_repo_table_and_verification():
     assert "patch-bump: requirements.txt" in prompt
     assert "CVE-1" in prompt
     assert "fixed and not_fixed per vuln_id" in prompt
+    assert "up to 3 attempts" in prompt
 
 
 def test_fix_type_groups_patch_first_and_deterministic():

@@ -131,11 +131,13 @@ def render_prompt(repo: str, rows: list[dict[str, str]]) -> str:
                 "do not open a PR while any vuln_id in that group is still present: diagnose, "
                 "fix, and re-scan again, up to 3 attempts. Report each PR in pull_requests[], "
                 "with each entry's fix_type and scope exactly as listed above, and report "
-                "no-fix findings at the repository level."
+                "no-fix findings at the repository level. For each attempt, save the scan as "
+                "scan-attempt-<n>.json and print a resolved, still-present, or unfixable "
+                "verdict for every vuln_id."
             ),
             "",
-        "| " + " | ".join(PROMPT_COLUMNS) + " |",
-        "| " + " | ".join("---" for _ in PROMPT_COLUMNS) + " |",
+            "| " + " | ".join(PROMPT_COLUMNS) + " |",
+            "| " + " | ".join("---" for _ in PROMPT_COLUMNS) + " |",
         ]
     )
     for row in ordered_rows:
