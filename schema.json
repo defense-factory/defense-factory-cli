@@ -24,6 +24,7 @@
     },
     "tests_passed": {"type": "boolean"},
     "scanner_findings_remaining": {"type": "integer", "minimum": 0},
+    "rescan_attempts": {"type": "integer", "minimum": 1},
     "notes": {"type": "string"}
   },
   "required": [
@@ -33,7 +34,8 @@
     "fixed",
     "not_fixed",
     "tests_passed",
-    "scanner_findings_remaining"
+    "scanner_findings_remaining",
+    "rescan_attempts"
   ],
   "additionalProperties": false
 }
