@@ -62,7 +62,7 @@ def create_session(
     max_acu_limit: int | None = None,
     repos: list[str] | None = None,
 ) -> dict[str, Any]:
-    base, _, org_id = _credentials()
+    _, _, org_id = _credentials()
     payload: dict[str, Any] = {
         "prompt": prompt,
         "playbook_id": playbook_id,
