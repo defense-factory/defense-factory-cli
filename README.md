@@ -29,9 +29,8 @@ vulnerability remediation.
 - Python 3.9 or newer and the packages in `requirements.txt`
 - Trivy installed and available on `PATH` for offline Trivy scans
 - `DEVIN_API_KEY` for real orchestration and verification
-- For the customer enterprise deployment, set
-  `DEVIN_API_BASE=https://test-aaron.devinenterprise.com/v1` (the client
-  defaults to `https://api.devin.ai/v1`)
+- Enterprise deployments should set `DEVIN_API_BASE` to their deployment's
+  API base URL; the client defaults to `https://api.devin.ai/v1`.
 
 The default Devin playbook is
 `playbook-90cdbb371d5a4807babf957b36130aff` (“Remediate Dependency

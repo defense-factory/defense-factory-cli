@@ -43,7 +43,6 @@ def group_findings(rows: list[dict[str, str]]) -> dict[str, list[dict[str, str]]
 
 
 def render_prompt(repo: str, rows: list[dict[str, str]]) -> str:
-    name = repo.rsplit("/", 1)[-1]
     lines = [
         (
             f"Remediate the dependency vulnerabilities in {repo}. Update dependencies "
@@ -91,7 +90,31 @@ def run_orchestration(
         if not state_path or not Path(state_path).exists():
             raise ValueError("--resume requires an existing --state file")
         with open(state_path, encoding="utf-8") as stream:
-            return json.load(stream)
+            state = json.load(stream)
+        state_repos = state.setdefault("repos", {})
+        schema = _load_schema()
+        for repo, rows in groups.items():
+            if repo in state_repos:
+                continue
+            name = repo.rsplit("/", 1)[-1]
+            response = create_session(
+                prompts[repo],
+                state["playbook_id"],
+                tags=["vuln-remediation", name],
+                title=f"Remediate {len(rows)} vulns in {name}",
+                structured_output_schema=schema,
+                idempotent=True,
+                max_acu_limit=max_acu,
+            )
+            state_repos[repo] = {
+                "session_id": response["session_id"],
+                "url": response.get("url", ""),
+                "vuln_ids": [row["vuln_id"] for row in rows],
+            }
+        with open(state_path, "w", encoding="utf-8") as stream:
+            json.dump(state, stream, indent=2)
+        print(f"State written to {state_path}")
+        return state
     state: dict[str, Any] = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "playbook_id": playbook_id,

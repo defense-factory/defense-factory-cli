@@ -132,6 +132,8 @@ def run(
     scanner = state.get("scanner", "trivy")
     results = []
     discrepancies = []
+    unfinished_sessions = []
+    false_claims = []
     for repo, details in state["repos"].items():
         session, finished = _poll(details["session_id"], poll_interval, timeout)
         structured = _structured_output(session)
@@ -139,16 +141,18 @@ def run(
         if not structured and pr_url:
             discrepancies.append(f"{repo}: degraded verification; structured output missing")
         if not finished:
-            discrepancies.append(f"{repo}: session did not finish ({session.get('status_enum', 'timeout')})")
+            message = f"{repo}: session did not finish ({session.get('status_enum', 'timeout')})"
+            discrepancies.append(message)
+            unfinished_sessions.append(message)
         if not pr_url:
             discrepancies.append(f"{repo}: no pull request URL in session output")
             continue
         scanned_ids, _ = _scan_pr(repo, pr_url, scanner, Path(workdir))
         reconciliation = reconcile(details["vuln_ids"], structured.get("fixed", []), set(scanned_ids))
         if reconciliation["false_claims"]:
-            discrepancies.append(
-                f"{repo}: false claims {', '.join(reconciliation['false_claims'])}"
-            )
+            message = f"{repo}: false claims {', '.join(reconciliation['false_claims'])}"
+            discrepancies.append(message)
+            false_claims.append(message)
         results.append(
             {
                 "repo": repo,
@@ -163,7 +167,7 @@ def run(
     if slack_webhook_url:
         summary = Path(report).read_text(encoding="utf-8")
         requests.post(slack_webhook_url, json={"text": summary}, timeout=30).raise_for_status()
-    return 1 if discrepancies else 0
+    return 1 if unfinished_sessions or false_claims else 0
 
 
 def _parser() -> argparse.ArgumentParser:
