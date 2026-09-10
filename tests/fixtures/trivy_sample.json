@@ -1,0 +1,27 @@
+{
+  "Results": [
+    {
+      "Target": "package-lock.json",
+      "Vulnerabilities": [
+        {
+          "PkgName": "lodash",
+          "InstalledVersion": "4.17.15",
+          "FixedVersion": "4.17.19||4.17.21",
+          "VulnerabilityID": "CVE-2020-8203",
+          "Severity": "HIGH",
+          "CVSS": {"nvd": {"V3Score": 7.4}},
+          "Title": "Prototype pollution"
+        },
+        {
+          "PkgName": "demo",
+          "InstalledVersion": "1.0.0",
+          "FixedVersion": "",
+          "VulnerabilityID": "CVE-2099-0001",
+          "Severity": "MEDIUM",
+          "CVSS": {},
+          "Title": "No fixed release"
+        }
+      ]
+    }
+  ]
+}
