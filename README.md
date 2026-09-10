@@ -85,6 +85,11 @@ The CSV columns are in this exact order:
 | `primary_url` | primary advisory URL |
 | `fix_type` | remediation strategy for the package or manifest |
 
+Rows are deduplicated by `(path, package, vuln_id)`. Line numbers are present
+for npm and pip dependencies and for Maven dependencies declared directly in
+`pom.xml`; Go modules and transitive Maven dependencies have none, so blank
+`start_line`/`end_line` values are expected.
+
 ## Triage buckets
 
 The findings use five fix types:
