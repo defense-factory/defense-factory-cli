@@ -57,7 +57,8 @@ From this directory, run these four commands:
    python scan.py --repo-path ../ms-notification-service --repo defense-factory/ms-notification-service --out findings.csv --append
    ```
 
-2. Start one remediation session per repository:
+2. Start one remediation session per repository. Each session plans stacked
+   remediation PRs by fix type:
 
    ```bash
    python orchestrate.py --findings findings.csv --playbook-id playbook-90cdbb371d5a4807babf957b36130aff --state runs/latest.json
@@ -69,7 +70,7 @@ From this directory, run these four commands:
    python verify.py --state runs/latest.json --report report.md
    ```
 
-4. Open `report.md` to review the per-repository results:
+4. Open `report.md` to review the per-PR results:
 
    ```bash
    less report.md
@@ -107,6 +108,7 @@ Both scanners are normalized to this CSV schema, in this exact order:
 | `cwe_ids` | semicolon-separated CWE identifiers |
 | `published` | advisory publication date |
 | `primary_url` | primary advisory URL |
+| `fix_type` | remediation strategy for the package or manifest |
 
 Findings are deduplicated by `(path, package, vuln_id)`. Scanner findings
 produce CSV rows; scanner execution failures return a nonzero exit status.
@@ -115,6 +117,13 @@ Maven dependencies declared directly in `pom.xml`, and does not supply them
 for Go modules. Blank Go or Maven-transitive `start_line`/`end_line` values
 are therefore expected rather than a scanning error.
 
+The classifier assigns each `(repo, package)` one of five fix types:
+`patch-bump`, `major-bump`, `parent-uplift`, `package-replacement`, or
+`no-fix`. The first four become PR groups: patch bumps and parent uplifts
+batch by manifest, while major bumps and package replacements get one package
+per group. Groups are remediated as stacked branches in deterministic order,
+with `no-fix` findings reported without a PR.
+
 ## Devin structured output
 
 Every session is asked to return:
@@ -122,27 +131,38 @@ Every session is asked to return:
 ```json
 {
   "repo": "owner/name",
-  "pr_url": "https://github.com/owner/name/pull/1",
-  "branch": "remediation-branch",
-  "fixed": ["CVE-2023-32681"],
+  "pull_requests": [
+    {
+      "fix_type": "patch-bump",
+      "pr_url": "https://github.com/owner/name/pull/1",
+      "branch": "remediation-branch",
+      "fixed": ["CVE-2023-32681"],
+      "not_fixed": [],
+      "tests_passed": true,
+      "rescan_attempts": 1
+    }
+  ],
   "not_fixed": [{"vuln_id": "CVE-2020-14343", "reason": "No compatible fix"}],
-  "tests_passed": true,
   "scanner_findings_remaining": 0,
   "notes": "optional"
 }
 ```
 
-`verify.py` treats this as a claim, fetches the PR branch, rescans it, and
-reports false claims or unfinished sessions. If structured output is absent,
-it falls back to the matching `pull_requests[].pr_url` entry and marks the
-verification as degraded in the discrepancies section.
+Each remediation session reports one entry in `pull_requests[]` per PR group;
+the branches are stacked in the same order as the plan. The playbook gates PR
+creation on a clean re-scan against each baseline, retrying up to 3 attempts,
+and reports the number of attempts in `rescan_attempts`. `verify.py`
+independently fetches every PR branch, rescans it, and reports false claims,
+coverage gaps, or unfinished sessions. If structured output is absent, it
+supports the legacy single `pr_url` shape and marks verification as degraded
+in the discrepancies section.
 
 ## Talk track
 
 1. **Scan:** normalize real Trivy or Snyk results into one CSV contract.
-2. **Orchestrate:** group findings by repository and send one focused prompt
-   to the remediation playbook for each repo.
+2. **Orchestrate:** group findings by repository and fix type, then send one
+   focused prompt to the remediation playbook for each repo.
 3. **Remediate:** each Devin session upgrades dependencies, runs tests, and
-   opens a PR.
+   opens stacked PRs for its planned groups.
 4. **Verify:** fetch each PR branch, rescan it, reconcile claimed versus
    actually absent vulnerability IDs, and present `report.md`.

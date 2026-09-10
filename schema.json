@@ -4,11 +4,53 @@
   "type": "object",
   "properties": {
     "repo": {"type": "string"},
-    "pr_url": {"type": "string"},
-    "branch": {"type": "string"},
-    "fixed": {
+    "pull_requests": {
       "type": "array",
-      "items": {"type": "string"}
+      "items": {
+        "type": "object",
+        "properties": {
+          "fix_type": {
+            "type": "string",
+            "enum": [
+              "patch-bump",
+              "major-bump",
+              "parent-uplift",
+              "package-replacement"
+            ]
+          },
+          "pr_url": {"type": "string"},
+          "branch": {"type": "string"},
+          "fixed": {
+            "type": "array",
+            "items": {"type": "string"}
+          },
+          "not_fixed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "vuln_id": {"type": "string"},
+                "reason": {"type": "string"}
+              },
+              "required": ["vuln_id", "reason"],
+              "additionalProperties": false
+            }
+          },
+          "tests_passed": {"type": "boolean"},
+          "rescan_attempts": {"type": "integer", "minimum": 1},
+          "based_on": {"type": "string"}
+        },
+        "required": [
+          "fix_type",
+          "pr_url",
+          "branch",
+          "fixed",
+          "not_fixed",
+          "tests_passed",
+          "rescan_attempts"
+        ],
+        "additionalProperties": false
+      }
     },
     "not_fixed": {
       "type": "array",
@@ -22,17 +64,13 @@
         "additionalProperties": false
       }
     },
-    "tests_passed": {"type": "boolean"},
     "scanner_findings_remaining": {"type": "integer", "minimum": 0},
     "notes": {"type": "string"}
   },
   "required": [
     "repo",
-    "pr_url",
-    "branch",
-    "fixed",
+    "pull_requests",
     "not_fixed",
-    "tests_passed",
     "scanner_findings_remaining"
   ],
   "additionalProperties": false

@@ -11,7 +11,7 @@ def test_prompt_contains_repo_table_and_verification():
                 "requirements.txt",
                 "requests",
                 "1",
-                "2",
+                "1.1",
                 "CVE-1",
                 "HIGH",
                 "7.5",
@@ -28,9 +28,40 @@ def test_prompt_contains_repo_table_and_verification():
     }
     prompt = orchestrate.render_prompt("owner/repo", [row])
     assert "Remediate the dependency vulnerabilities in owner/repo" in prompt
-    assert "| vuln_id | package | installed_version |" in prompt
+    assert "| fix_type | vuln_id | package | installed_version |" in prompt
+    assert "PR plan (one PR per group, in this order):" in prompt
+    assert "patch-bump: requirements.txt" in prompt
     assert "CVE-1" in prompt
     assert "fixed and not_fixed per vuln_id" in prompt
+
+
+def test_fix_type_groups_patch_first_and_deterministic():
+    def row(package, fixed, severity, path="requirements.txt", relationship="direct"):
+        return {
+            "repo": "owner/repo",
+            "path": path,
+            "package": package,
+            "installed_version": "1.0.0",
+            "fixed_version": fixed,
+            "vuln_id": f"CVE-{package}",
+            "severity": severity,
+            "cvss": "",
+            "title": "",
+            "relationship": relationship,
+        }
+
+    groups = orchestrate.fix_type_groups(
+        [
+            row("major", "2.0.0", "CRITICAL", "major.json"),
+            row("patch", "1.0.1", "LOW"),
+            row("parent", "2.0.0", "HIGH", "pom.xml", "indirect"),
+        ]
+    )
+    assert [(fix_type, scope) for fix_type, scope, _ in groups] == [
+        ("patch-bump", "requirements.txt"),
+        ("major-bump", "major"),
+        ("parent-uplift", "pom.xml"),
+    ]
 
 
 def test_dry_run_does_not_create_sessions(tmp_path, monkeypatch, capsys):
@@ -69,3 +100,4 @@ def test_orchestration_creates_one_session_per_repo(tmp_path, monkeypatch):
     assert calls[0][2]["tags"][0] == "vuln-remediation"
     assert "CVE-1" in calls[0][0]
     assert state["repos"]["owner/two"]["vuln_ids"] == ["CVE-2"]
+    assert state["repos"]["owner/two"]["groups"][0]["fix_type"] == "major-bump"
