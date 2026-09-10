@@ -7,6 +7,9 @@ import time
 from typing import Any
 
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 DEFAULT_API_BASE = "https://api.devin.ai/v1"
