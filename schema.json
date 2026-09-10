@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "Default playbook id: playbook-90cdbb371d5a4807babf957b36130aff (Remediate Dependency Vulnerabilities).",
+  "type": "object",
+  "properties": {
+    "repo": {"type": "string"},
+    "pr_url": {"type": "string"},
+    "branch": {"type": "string"},
+    "fixed": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "not_fixed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "vuln_id": {"type": "string"},
+          "reason": {"type": "string"}
+        },
+        "required": ["vuln_id", "reason"],
+        "additionalProperties": false
+      }
+    },
+    "tests_passed": {"type": "boolean"},
+    "scanner_findings_remaining": {"type": "integer", "minimum": 0},
+    "notes": {"type": "string"}
+  },
+  "required": [
+    "repo",
+    "pr_url",
+    "branch",
+    "fixed",
+    "not_fixed",
+    "tests_passed",
+    "scanner_findings_remaining"
+  ],
+  "additionalProperties": false
+}

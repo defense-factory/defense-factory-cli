@@ -1,0 +1,15 @@
+{
+  "vulnerabilities": [
+    {
+      "packageName": "requests",
+      "version": "2.25.1",
+      "fixedIn": ["2.31.0", "2.32.0"],
+      "id": "SNYK-PYTHON-REQUESTS-999",
+      "identifiers": {"CVE": ["CVE-2023-32681"]},
+      "severity": "high",
+      "cvssScore": 7.5,
+      "title": "Proxy authorization leak",
+      "displayTargetFile": "requirements.txt"
+    }
+  ]
+}
