@@ -55,6 +55,96 @@ def _pull_request_url(session: dict[str, Any], repo: str) -> str:
     return ""
 
 
+def _not_fixed_ids(entries: list[dict[str, Any]]) -> list[str]:
+    return [
+        item["vuln_id"]
+        for entry in entries
+        for item in entry.get("not_fixed") or []
+        if isinstance(item, dict) and item.get("vuln_id")
+    ]
+
+
+def _state_groups(details: dict[str, Any]) -> list[dict[str, Any]]:
+    groups = details.get("groups") or []
+    if groups:
+        return groups
+    return [
+        {
+            "fix_type": "legacy",
+            "scope": "legacy",
+            "vuln_ids": details.get("vuln_ids", []),
+        }
+    ]
+
+
+def _match_state_group(
+    entry: dict[str, Any], groups: list[dict[str, Any]]
+) -> dict[str, Any] | None:
+    fix_type = entry.get("fix_type", "")
+    scope = entry.get("scope")
+    if scope is not None:
+        for group in groups:
+            if group.get("fix_type") == fix_type and group.get("scope") == scope:
+                return group
+        return None
+    claimed = set(entry.get("fixed") or []) | set(_not_fixed_ids([entry]))
+    candidates = [
+        group
+        for group in groups
+        if group.get("fix_type") == fix_type
+        and claimed.intersection(group.get("vuln_ids") or [])
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        same_type = [group for group in groups if group.get("fix_type") == fix_type]
+        if len(same_type) == 1:
+            return same_type[0]
+    return None
+
+
+def _pull_request_entries(
+    structured: dict[str, Any],
+    details: dict[str, Any],
+    repo: str,
+    discrepancies: list[str],
+    session: dict[str, Any],
+) -> list[dict[str, Any]]:
+    entries = structured.get("pull_requests")
+    if isinstance(entries, list):
+        return entries
+    pr_url = structured.get("pr_url")
+    if pr_url:
+        discrepancies.append(f"{repo}: legacy single pr_url structured-output shape")
+        return [
+            {
+                "fix_type": "legacy",
+                "pr_url": pr_url,
+                "fixed": structured.get("fixed", []),
+                "not_fixed": structured.get("not_fixed", []),
+                "tests_passed": structured.get("tests_passed", "unknown"),
+                "rescan_attempts": structured.get("rescan_attempts", "unknown"),
+                "legacy": True,
+            }
+        ]
+    fallback = _pull_request_url(session, repo)
+    if fallback:
+        discrepancies.append(f"{repo}: degraded verification; structured output missing")
+        return [
+            {
+                "fix_type": "legacy",
+                "pr_url": fallback,
+                "fixed": [],
+                "not_fixed": [],
+                "tests_passed": "unknown",
+                "rescan_attempts": "unknown",
+                "legacy": True,
+                "degraded": True,
+            }
+        ]
+    return []
+
+
 def _scan_pr(
     repo: str, pr_url: str, scanner: str, workdir: Path
 ) -> tuple[list[str], str]:
@@ -94,19 +184,24 @@ def _poll(
 
 
 def write_report(
-    results: list[dict[str, Any]], report_path: str, discrepancies: list[str]
+    results: list[dict[str, Any]],
+    report_path: str,
+    discrepancies: list[str],
+    repo_totals: dict[str, int] | None = None,
+    repo_absent: dict[str, set[str]] | None = None,
 ) -> None:
     lines = [
         "# Vulnerability Remediation Verification",
         "",
-        "| repo | PR | findings in | fixed | not fixed | tests_passed | rescans | new findings |",
-        "| --- | --- | ---: | --- | --- | --- | --- | --- |",
+        "| repo | PR | fix_type | findings in | fixed | not fixed | tests_passed | rescans | new findings |",
+        "| --- | --- | --- | ---: | --- | --- | --- | --- | --- |",
     ]
     for result in results:
         lines.append(
-            "| {repo} | {pr} | {count} | {fixed} | {not_fixed} | {tests} | {rescans} | {new} |".format(
+            "| {repo} | {pr} | {fix_type} | {count} | {fixed} | {not_fixed} | {tests} | {rescans} | {new} |".format(
                 repo=result["repo"],
                 pr=result["pr_url"] or "n/a",
+                fix_type=result.get("fix_type", "legacy"),
                 count=len(result["vuln_ids"]),
                 fixed=", ".join(result["reconciliation"]["actually_absent"]) or "none",
                 not_fixed=", ".join(result["reconciliation"]["unfixed"]) or "none",
@@ -115,8 +210,14 @@ def write_report(
                 new=", ".join(result["new_findings"]) or "none",
             )
         )
-    fixed_total = sum(len(item["reconciliation"]["actually_absent"]) for item in results)
-    finding_total = sum(len(item["vuln_ids"]) for item in results)
+    if repo_totals is None:
+        fixed_total = sum(
+            len(item["reconciliation"]["actually_absent"]) for item in results
+        )
+        finding_total = sum(len(item["vuln_ids"]) for item in results)
+    else:
+        fixed_total = sum(len(ids) for ids in (repo_absent or {}).values())
+        finding_total = sum(repo_totals.values())
     lines.extend(["", f"Totals: {fixed_total}/{finding_total} input findings absent after remediation."])
     lines.extend(["", "## Discrepancies"])
     lines.extend(f"- {item}" for item in discrepancies or ["None."])
@@ -137,12 +238,16 @@ def run(
     discrepancies = []
     unfinished_sessions = []
     false_claims = []
+    coverage_errors = []
+    plan_errors = []
+    repo_totals = {}
+    repo_absent: dict[str, set[str]] = {}
     for repo, details in state["repos"].items():
+        input_ids = details["vuln_ids"]
+        repo_totals[repo] = len(input_ids)
+        repo_absent[repo] = set()
         session, successful = _poll(details["session_id"], poll_interval, timeout)
         structured = _structured_output(session)
-        pr_url = structured.get("pr_url") or _pull_request_url(session, repo)
-        if not structured and pr_url:
-            discrepancies.append(f"{repo}: degraded verification; structured output missing")
         if not successful:
             message = (
                 f"{repo}: session did not finish "
@@ -151,30 +256,84 @@ def run(
             )
             discrepancies.append(message)
             unfinished_sessions.append(message)
-        if not pr_url:
-            discrepancies.append(f"{repo}: no pull request URL in session output")
-            continue
-        scanned_ids, _ = _scan_pr(repo, pr_url, scanner, Path(workdir))
-        reconciliation = reconcile(details["vuln_ids"], structured.get("fixed", []), set(scanned_ids))
-        if reconciliation["false_claims"]:
-            message = f"{repo}: false claims {', '.join(reconciliation['false_claims'])}"
-            discrepancies.append(message)
-            false_claims.append(message)
-        results.append(
-            {
-                "repo": repo,
-                "pr_url": pr_url,
-                "vuln_ids": details["vuln_ids"],
-                "structured": structured,
-                "reconciliation": reconciliation,
-                "new_findings": sorted(set(scanned_ids) - set(details["vuln_ids"])),
-            }
+        entries = _pull_request_entries(
+            structured, details, repo, discrepancies, session
         )
-    write_report(results, report, discrepancies)
+        if not entries:
+            discrepancies.append(f"{repo}: no pull request URL in session output")
+        claimed_ids: list[str] = []
+        claimed_ids.extend(
+            item
+            for entry in entries
+            for item in entry.get("fixed") or []
+        )
+        claimed_ids.extend(_not_fixed_ids(entries))
+        claimed_ids.extend(_not_fixed_ids([structured]))
+        counts = {}
+        for vuln_id in claimed_ids:
+            counts[vuln_id] = counts.get(vuln_id, 0) + 1
+        duplicates = sorted(
+            vuln_id for vuln_id, count in counts.items() if count > 1 and vuln_id in input_ids
+        )
+        missing = sorted(set(input_ids) - set(claimed_ids))
+        if duplicates:
+            message = f"{repo}: duplicated coverage vuln_ids {', '.join(duplicates)}"
+            discrepancies.append(message)
+            if not any(entry.get("degraded") for entry in entries):
+                coverage_errors.append(message)
+        if missing:
+            message = f"{repo}: missing coverage vuln_ids {', '.join(missing)}"
+            discrepancies.append(message)
+            if not any(entry.get("degraded") for entry in entries):
+                coverage_errors.append(message)
+
+        groups = _state_groups(details)
+        for entry in entries:
+            pr_url = entry.get("pr_url", "")
+            if not pr_url:
+                discrepancies.append(f"{repo}: pull_requests entry has no PR URL")
+                continue
+            group = None if entry.get("legacy") else _match_state_group(entry, groups)
+            if group is None:
+                if entry.get("legacy"):
+                    group_ids = input_ids
+                    fix_type = "legacy"
+                else:
+                    message = (
+                        f"{repo}: pull_requests entry plan group not found "
+                        f"(fix_type={entry.get('fix_type', 'unknown')}, "
+                        f"scope={entry.get('scope', 'unknown')})"
+                    )
+                    discrepancies.append(message)
+                    plan_errors.append(message)
+                    group_ids = []
+                    fix_type = entry.get("fix_type", "unknown")
+            else:
+                group_ids = group.get("vuln_ids") or []
+                fix_type = group.get("fix_type", entry.get("fix_type", "unknown"))
+            scanned_ids, _ = _scan_pr(repo, pr_url, scanner, Path(workdir))
+            reconciliation = reconcile(group_ids, entry.get("fixed", []), set(scanned_ids))
+            repo_absent[repo].update(reconciliation["actually_absent"])
+            if reconciliation["false_claims"]:
+                message = f"{repo}: false claims {', '.join(reconciliation['false_claims'])}"
+                discrepancies.append(message)
+                false_claims.append(message)
+            results.append(
+                {
+                    "repo": repo,
+                    "pr_url": pr_url,
+                    "fix_type": fix_type,
+                    "vuln_ids": group_ids,
+                    "structured": entry,
+                    "reconciliation": reconciliation,
+                    "new_findings": sorted(set(scanned_ids) - set(input_ids)),
+                }
+            )
+    write_report(results, report, discrepancies, repo_totals, repo_absent)
     if slack_webhook_url:
         summary = Path(report).read_text(encoding="utf-8")
         requests.post(slack_webhook_url, json={"text": summary}, timeout=30).raise_for_status()
-    return 1 if unfinished_sessions or false_claims else 0
+    return 1 if unfinished_sessions or false_claims or coverage_errors or plan_errors else 0
 
 
 def _parser() -> argparse.ArgumentParser:

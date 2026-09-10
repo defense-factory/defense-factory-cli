@@ -9,6 +9,7 @@ import json
 import os
 import re
 import subprocess
+from collections import defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -31,8 +32,30 @@ CSV_COLUMNS = [
     "cwe_ids",
     "published",
     "primary_url",
+    "fix_type",
 ]
+APPEND_REQUIRED_COLUMNS = (
+    "repo",
+    "path",
+    "package",
+    "installed_version",
+    "fixed_version",
+    "vuln_id",
+    "severity",
+    "cvss",
+    "title",
+    "start_line",
+    "end_line",
+    "relationship",
+    "status",
+    "cwe_ids",
+    "published",
+    "primary_url",
+)
 DEFAULT_TRIVY_DB = "ghcr.io/aquasecurity/trivy-db"
+FIX_TYPE_OVERRIDES = {
+    "github.com/dgrijalva/jwt-go": "package-replacement",
+}
 
 
 @dataclass(frozen=True)
@@ -53,9 +76,62 @@ class Finding:
     cwe_ids: str
     published: str
     primary_url: str
+    fix_type: str = ""
 
     def as_dict(self) -> dict[str, str]:
         return asdict(self)
+
+
+def parse_version(value: str) -> tuple[int, int, int] | None:
+    match = re.match(
+        r"[>=~^ ]*v?(\d+)(?:\.(\d+))?(?:\.(\d+))?", value or ""
+    )
+    if not match:
+        return None
+    return tuple(int(part) if part else 0 for part in match.groups())
+
+
+def classify(rows: list[dict[str, str]]) -> dict[tuple[str, str], str]:
+    """Return {(repo, package): fix_type}. A package has one fix_type per repo."""
+    by_package: dict[tuple[str, str], list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        by_package[(row["repo"], row["package"])].append(row)
+
+    fix_types: dict[tuple[str, str], str] = {}
+    for key, group in by_package.items():
+        override = FIX_TYPE_OVERRIDES.get(key[1])
+        targets = [parse_version(row["fixed_version"]) for row in group if row["fixed_version"]]
+        targets = [target for target in targets if target]
+        if not targets:
+            fix_types[key] = override or "no-fix"
+            continue
+        if override:
+            fix_types[key] = override
+            continue
+        installed = parse_version(group[0]["installed_version"])
+        is_major = bool(installed) and max(targets)[0] != installed[0]
+        if not is_major:
+            fix_types[key] = "patch-bump"
+        elif group[0].get("relationship", "") == "indirect":
+            fix_types[key] = "parent-uplift"
+        else:
+            fix_types[key] = "major-bump"
+    return fix_types
+
+
+def group_key(row: dict[str, str], fix_type: str) -> tuple[str, str, str]:
+    """Return the PR unit key for a classified finding row."""
+    if fix_type in ("patch-bump", "parent-uplift"):
+        return (row["repo"], fix_type, row["path"])
+    return (row["repo"], fix_type, row["package"])
+
+
+def classify_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    fix_types = classify(rows)
+    return [
+        {**row, "fix_type": fix_types[(row["repo"], row["package"])]}
+        for row in rows
+    ]
 
 
 def _version_key(version: str) -> tuple[int, ...]:
@@ -274,10 +350,17 @@ def scan(repo_path: str | Path, repo: str, scanner: str = "trivy") -> list[Findi
 
 
 def write_csv(findings: Iterable[Finding], output: str | Path) -> None:
+    write_rows_csv((finding.as_dict() for finding in findings), output)
+
+
+def write_rows_csv(rows: Iterable[dict[str, str]], output: str | Path) -> None:
     with open(output, "w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=CSV_COLUMNS, lineterminator="\n")
         writer.writeheader()
-        writer.writerows(finding.as_dict() for finding in findings)
+        writer.writerows(
+            {column: row.get(column, "") for column in CSV_COLUMNS}
+            for row in rows
+        )
 
 
 def read_csv(path: str | Path) -> list[dict[str, str]]:
@@ -287,35 +370,64 @@ def read_csv(path: str | Path) -> list[dict[str, str]]:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-path", required=True)
-    parser.add_argument("--repo", required=True)
+    parser.add_argument("--repo-path")
+    parser.add_argument("--repo")
     parser.add_argument("--scanner", choices=("trivy", "snyk"), default=None)
     parser.add_argument("--out", default="findings.csv")
     parser.add_argument("--append", action="store_true")
+    parser.add_argument("--reclassify")
+    parser.add_argument("--fix-type-override", action="append", default=[])
     return parser
+
+
+def _apply_fix_type_overrides(values: list[str]) -> None:
+    for value in values:
+        package, separator, fix_type = value.partition("=")
+        if not separator or not package or not fix_type:
+            raise ValueError(
+                f"Invalid --fix-type-override {value!r}; expected package=type"
+            )
+        FIX_TYPE_OVERRIDES[package] = fix_type
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    try:
+        _apply_fix_type_overrides(args.fix_type_override)
+    except ValueError as exc:
+        _parser().error(str(exc))
+    if args.reclassify:
+        rows = classify_rows(read_csv(args.reclassify))
+        write_rows_csv(rows, args.reclassify)
+        print(f"{len(rows)} findings reclassified in {args.reclassify}")
+        return 0
+    if not args.repo_path or not args.repo:
+        _parser().error("--repo-path and --repo are required unless --reclassify is used")
     scanner = args.scanner or os.environ.get("SCANNER", "trivy")
     findings = scan(args.repo_path, args.repo, scanner)
     if args.append and Path(args.out).exists():
         with open(args.out, newline="", encoding="utf-8") as stream:
             reader = csv.DictReader(stream)
             fieldnames = set(reader.fieldnames or [])
-            missing_columns = [column for column in CSV_COLUMNS if column not in fieldnames]
+            missing_columns = [
+                column for column in APPEND_REQUIRED_COLUMNS if column not in fieldnames
+            ]
             if missing_columns:
                 raise ValueError(
                     f"Cannot append to stale findings CSV {args.out}; regenerate it with the current scan.py"
                 )
             try:
-                existing = [Finding(**row) for row in reader]
+                existing = [
+                    Finding(**{**row, "fix_type": row.get("fix_type", "")})
+                    for row in reader
+                ]
             except TypeError as exc:
                 raise ValueError(
                     f"Cannot append to stale findings CSV {args.out}; regenerate it with the current scan.py"
                 ) from exc
         findings = _deduplicate(existing + findings)
-    write_csv(findings, args.out)
+    classified = classify_rows([finding.as_dict() for finding in findings])
+    write_rows_csv(classified, args.out)
     print(f"{args.repo}: {len(findings)} findings written to {args.out}")
     return 0
 
