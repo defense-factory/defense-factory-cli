@@ -61,9 +61,12 @@ def render_prompt(repo: str, rows: list[dict[str, str]]) -> str:
         [
             "",
             (
-                "After the edits, run the repository test suite and re-scan the same branch "
-                "with the same scanner. Report fixed and not_fixed per vuln_id, tests_passed, "
-                "and scanner_findings_remaining in the structured output."
+                "After the edits, run the repository test suite, then re-scan the branch with "
+                "the same scanner and compare against your baseline before opening a PR. Do "
+                "not open the PR while any vuln_id above is still present: diagnose, fix, and "
+                "re-scan again, up to 3 attempts. Report fixed and not_fixed per vuln_id, "
+                "tests_passed, scanner_findings_remaining, and rescan_attempts in the "
+                "structured output."
             ),
         ]
     )

@@ -31,6 +31,7 @@ def test_prompt_contains_repo_table_and_verification():
     assert "| vuln_id | package | installed_version |" in prompt
     assert "CVE-1" in prompt
     assert "fixed and not_fixed per vuln_id" in prompt
+    assert "up to 3 attempts" in prompt
 
 
 def test_dry_run_does_not_create_sessions(tmp_path, monkeypatch, capsys):

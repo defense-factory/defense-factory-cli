@@ -128,14 +128,17 @@ Every session is asked to return:
   "not_fixed": [{"vuln_id": "CVE-2020-14343", "reason": "No compatible fix"}],
   "tests_passed": true,
   "scanner_findings_remaining": 0,
+  "rescan_attempts": 1,
   "notes": "optional"
 }
 ```
 
-`verify.py` treats this as a claim, fetches the PR branch, rescans it, and
-reports false claims or unfinished sessions. If structured output is absent,
-it falls back to the matching `pull_requests[].pr_url` entry and marks the
-verification as degraded in the discrepancies section.
+The playbook gates PR creation on a clean re-scan against the baseline, retrying
+up to 3 attempts, and reports the number of attempts in `rescan_attempts`.
+`verify.py` independently fetches the PR branch, rescans it, and reports false
+claims or unfinished sessions. If structured output is absent, it falls back to
+the matching `pull_requests[].pr_url` entry and marks the verification as
+degraded in the discrepancies section.
 
 ## Talk track
 

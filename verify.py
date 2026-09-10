@@ -99,18 +99,19 @@ def write_report(
     lines = [
         "# Vulnerability Remediation Verification",
         "",
-        "| repo | PR | findings in | fixed | not fixed | tests_passed | new findings |",
-        "| --- | --- | ---: | --- | --- | --- | --- |",
+        "| repo | PR | findings in | fixed | not fixed | tests_passed | rescans | new findings |",
+        "| --- | --- | ---: | --- | --- | --- | --- | --- |",
     ]
     for result in results:
         lines.append(
-            "| {repo} | {pr} | {count} | {fixed} | {not_fixed} | {tests} | {new} |".format(
+            "| {repo} | {pr} | {count} | {fixed} | {not_fixed} | {tests} | {rescans} | {new} |".format(
                 repo=result["repo"],
                 pr=result["pr_url"] or "n/a",
                 count=len(result["vuln_ids"]),
                 fixed=", ".join(result["reconciliation"]["actually_absent"]) or "none",
                 not_fixed=", ".join(result["reconciliation"]["unfixed"]) or "none",
                 tests=result["structured"].get("tests_passed", "unknown"),
+                rescans=result["structured"].get("rescan_attempts", "unknown"),
                 new=", ".join(result["new_findings"]) or "none",
             )
         )
