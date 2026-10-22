@@ -49,9 +49,23 @@ session:
 python kickoff.py --findings findings.csv --dry-run
 ```
 
+Optional flags:
+
+- `--playbook-id <id>` overrides the default remediation playbook used by the
+  child sessions.
+- `--max-acu <n>` caps the ACU budget of the triage session.
+
 The triage session prints the bucket table, dispatches one child per bucket in
 a single session-creation call, waits for all children, and posts a final
 summary.
+
+### Devin CLI skill
+
+The repository ships a `defense-factory` skill in
+`.devin/skills/defense-factory/SKILL.md`. From the Devin CLI, run
+`/defense-factory [findings.csv] [--dry-run] [--playbook-id <id>] [--max-acu <n>]`
+to check the required environment variables and launch `kickoff.py` with the
+same flags.
 
 ## Frozen findings CSV
 
