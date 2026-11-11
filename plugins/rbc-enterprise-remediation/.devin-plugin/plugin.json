@@ -1,0 +1,6 @@
+{
+  "name": "rbc-enterprise-remediation",
+  "version": "1.0.0",
+  "description": "RBC central security CVE remediation baseline (demo)",
+  "author": {"name": "RBC Central Security"}
+}

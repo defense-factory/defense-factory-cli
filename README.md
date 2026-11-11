@@ -1,5 +1,77 @@
 # Defense Factory CLI
 
+## Security 2.0 ingestion flow
+
+The RBC demo ingests an external vulnerability report into Devin Security 2.0,
+rather than starting a legacy triage session:
+
+```text
+Pharos export -> service user -> attachments API -> ONE multi-repo ingestion scan
+                                                           |
+                                                        findings
+                                                           |
+                                                 remediation sessions
+                                                 governed by both:
+                                       enterprise plugin + LOB org plugin
+```
+
+The CLI uploads and ingests only; it does not launch remediation sessions or
+merge PRs. Review findings and start remediation through Devin Security.
+The ingestion profile must be an `ingest`-mode profile configured to interpret
+the Pharos CSV fields and retain Pharos finding IDs and appcodes.
+
+### Setup
+
+Use Python 3.10+ and `python -m pip install -r requirements.txt`. Copy
+`.env.example` to `.env`, then supply a service-user credential. For this deployment:
+
+```bash
+export DEVIN_API_KEY='<service-user-key>'
+export DEVIN_ORG_ID=org-44fc0af4f56347e7a64186c8cc882563
+export DEVIN_API_BASE=https://test-aaron.devinenterprise.com/api/v3
+export DEVIN_INGEST_PROFILE_ID=csprof-ddebd94392fa43fca3ea63ecd70a9c04
+```
+
+The documented profile is the demo default; `--profile-id` overrides the env
+value. Without either, the CLI requires a profile explicitly. The service user
+needs org-level `UseDevinSessions` (attachments), `UseCodeScans` (ingestion), and
+`ViewCodeScans` (polling/findings). No API credentials are needed for dry-run.
+
+Org model: **one CVE org per LOB**, owned by the central security team, with
+access to that LOB's repositories. PCB is Personal & Commercial Banking.
+Central security requires `plugins/rbc-enterprise-remediation` enterprise-wide;
+the PCB org installs `plugins/lob-pcb-cve-remediation` for its own conventions.
+See each plugin README for git-subdirectory installation and ownership.
+Installing/configuring these plugins is an admin step, not something this CLI does.
+
+### Usage
+
+```bash
+python ingest.py --dry-run --profile-id csprof-test
+python ingest.py --export pharos_export.csv --profile-id "$DEVIN_INGEST_PROFILE_ID"
+python ingest.py --lob PCB --repo defense-factory/ms-user-service \
+  --repo defense-factory/ms-payment-service --effort deep --wait
+```
+
+`--repo` accepts repeatable full owner/repo names; `--lob` intersects that filter.
+Filtered exports are written to a temporary CSV, uploaded, then removed.
+The summary shows repo × severity counts including UNKNOWN. One scan covers
+all selected repos (maximum 200; alphabetical first is primary). Dry-run prints
+the request body with a placeholder attachment URL and makes no API calls.
+`--wait` polls every ten seconds until completed, failed or cancelled, then
+prints finding counts; failed/cancelled scans exit nonzero. A full backlog
+returns a clear retry-later error; no scan is automatically resubmitted.
+
+`pharos_export.csv` preserves all 241 source findings, including no-fix rows,
+but omits `fix_type`: Pharos does not know remediation strategies. Regenerate
+deterministically with `python generate_pharos_export.py`. PHX IDs follow frozen
+source row order; first_seen is 2026-10-01, with 15/30/90/180-day SLAs for
+CRITICAL/HIGH/MEDIUM/LOW. UNKNOWN severity is preserved with blank sla_due.
+
+**Next: replace upload with Pharos API pull once network access is open.**
+
+## Legacy triage flow
+
 This repository is a small, framework-free vulnerability-remediation demo.
 The committed findings artifact feeds one Devin triage session:
 
