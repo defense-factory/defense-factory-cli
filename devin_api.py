@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 import requests
@@ -33,8 +34,11 @@ def _request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
     base, key, _ = _credentials()
     headers = dict(kwargs.pop("headers", {}))
     headers["Authorization"] = f"Bearer {key}"
-    headers.setdefault("Content-Type", "application/json")
+    if "files" not in kwargs:
+        headers.setdefault("Content-Type", "application/json")
     for attempt in range(3):
+        for _, stream in kwargs.get("files", {}).values():
+            stream.seek(0)
         response = requests.request(
             method,
             f"{base}{path}",
@@ -47,11 +51,73 @@ def _request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
                 time.sleep(2**attempt)
                 continue
         if response.status_code >= 400:
+            if response.status_code == 409 and path.endswith("/code-scans/ingestion"):
+                raise RuntimeError("Devin scan backlog is at capacity (409); retry later.")
             raise RuntimeError(
                 f"Devin API {response.status_code} for {method} {path}: {response.text}"
             )
         return response.json()
     raise RuntimeError(f"Devin API retries exhausted for {method} {path}")
+
+
+def upload_attachment(path: str | Path) -> dict[str, Any]:
+    _, _, org_id = _credentials()
+    path = Path(path)
+    with path.open("rb") as stream:
+        return _request("POST", f"/organizations/{org_id}/attachments",
+                        files={"file": (path.name, stream)})
+
+
+def ingestion_payload(profile_id, attachment_urls, repos=None, repo_name=None,
+                      effort=None, platform=None):
+    if not profile_id:
+        raise ValueError("profile_id is required")
+    if (repos is None) == (repo_name is None):
+        raise ValueError("Provide exactly one of repos or repo_name")
+    if repos is not None and (not 1 <= len(repos) <= 200 or any(
+            not isinstance(repo, dict) or not repo.get("repo_name") for repo in repos)):
+        raise ValueError("repos must contain 1 to 200 objects with repo_name")
+    if repo_name is not None and (not isinstance(repo_name, str) or not repo_name.strip()):
+        raise ValueError("repo_name must be a nonempty string")
+    if effort is not None and effort not in {"normal", "deep"}:
+        raise ValueError("effort must be normal or deep")
+    payload = {"profile_id": profile_id, "attachment_urls": attachment_urls}
+    payload.update({"repos": repos} if repos is not None else {"repo_name": repo_name})
+    for key, value in (("effort", effort), ("platform", platform)):
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def start_ingestion_scan(profile_id, attachment_urls, repos=None, repo_name=None,
+                         effort=None, platform=None):
+    payload = ingestion_payload(profile_id, attachment_urls, repos, repo_name, effort, platform)
+    _, _, org_id = _credentials()
+    return _request("POST", f"/organizations/{org_id}/code-scans/ingestion", json=payload)
+
+
+def _scan_pages(resource, **params):
+    _, _, org_id = _credentials()
+    params = {**params, "first": 200}
+    while True:
+        page = _request("GET", f"/organizations/{org_id}/code-scans/{resource}",
+                        params=dict(params))
+        yield from page["items"]
+        if not page.get("has_next_page"):
+            break
+        params["after"] = page["end_cursor"]
+
+
+def get_scan_status(scan_id, repo_name=None):
+    params = {"repo_name": repo_name} if repo_name else {}
+    for scan in _scan_pages("scans", **params):
+        if scan["scan_id"] == scan_id:
+            return scan
+    raise RuntimeError(f"Scan {scan_id} not found in organization")
+
+
+def list_scan_findings(scan_id):
+    return list(_scan_pages("findings", scan_id=scan_id))
 
 
 def create_session(
