@@ -112,23 +112,54 @@ def test_backlog_error(api_mock):
         devin_api.start_ingestion_scan("profile", [], repo_name="owner/repo")
 
 
-def test_paginated_status_and_findings(api_mock):
+def test_direct_status_and_paginated_findings(api_mock):
     calls, responses = api_mock
-    responses.extend([(200, {"items": [{"scan_id": "other"}], "has_next_page": True,
-                             "end_cursor": "next"}),
-                      (200, {"items": [{"scan_id": "target", "status": "completed"}]}),
+    responses.extend([(200, {"scan_id": "target", "status": "completed"}),
                       (200, {"items": [{"severity": "high"}], "has_next_page": True,
                              "end_cursor": "findings-next"}),
                       (200, {"items": []})])
-    assert devin_api.get_scan_status("target", "owner/repo")["status"] == "completed"
-    assert calls[1][2]["params"] == {"first": 200, "repo_name": "owner/repo", "after": "next"}
+    assert devin_api.get_scan_status("target")["status"] == "completed"
+    assert calls[0][:2] == ("GET", "https://api.example/v3/organizations/org-test/code-scans/target")
     assert devin_api.list_scan_findings("target") == [{"severity": "high"}]
-    assert calls[2][2]["params"] == {"first": 200, "scan_id": "target"}
-    assert calls[3][2]["params"]["after"] == "findings-next"
+    assert calls[1][2]["params"] == {"first": 200, "scan_id": "target"}
+    assert calls[2][2]["params"]["after"] == "findings-next"
 
 
 def test_scan_not_found(api_mock):
     _, responses = api_mock
-    responses.append((200, {"items": []}))
-    with pytest.raises(RuntimeError, match="not found"):
+    responses.append((404, {}))
+    with pytest.raises(RuntimeError, match="404"):
         devin_api.get_scan_status("absent")
+
+
+def test_bulk_remediation_body(api_mock):
+    calls, responses = api_mock
+    result = {"session_id": "devin-planner", "finding_ids": ["finding-1"], "skipped_count": 2}
+    responses.append((200, result))
+    assert devin_api.remediate_findings("scan-1", ["critical", "medium"],
+        repo_name="owner/repo", exclude_finding_ids=["finding-2"], branch="fix/cves",
+        create_as_user_id="user-1") == result
+    assert calls[0][:2] == ("POST", "https://api.example/v3/organizations/org-test/code-scans/scan-1/findings/remediate")
+    assert calls[0][2]["json"] == {
+        "select_all": {"severity": ["critical", "medium"], "repo_name": "owner/repo"},
+        "exclude_finding_ids": ["finding-2"], "branch": "fix/cves", "create_as_user_id": "user-1"}
+
+
+def test_bulk_defaults(api_mock):
+    calls, responses = api_mock
+    responses.append((200, {}))
+    devin_api.remediate_findings("scan-1")
+    assert calls[0][2]["json"] == {"select_all": {"severity": ["critical", "high"]}}
+
+
+@pytest.mark.parametrize("severities", [[], (), ["unknown"], ["HIGH"], "high", None])
+def test_invalid_bulk_severity(severities):
+    with pytest.raises(ValueError, match="non-empty sequence"):
+        devin_api.remediate_findings("scan-1", severities)
+
+
+def test_bulk_400_has_actionable_message(api_mock):
+    _, responses = api_mock
+    responses.append((400, {}))
+    with pytest.raises(RuntimeError, match="no matching findings or more than 1000"):
+        devin_api.remediate_findings("scan-1")
