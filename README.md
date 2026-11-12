@@ -15,8 +15,9 @@ Pharos export -> service user -> attachments API -> ONE multi-repo ingestion sca
                                        enterprise plugin + LOB org plugin
 ```
 
-The CLI uploads and ingests only; it does not launch remediation sessions or
-merge PRs. Review findings and start remediation through Devin Security.
+By default the CLI uploads and ingests only. Add `--remediate` to wait for
+completion and launch bulk remediation for critical + high findings. It never
+merges PRs.
 The ingestion profile must be an `ingest`-mode profile configured to interpret
 the Pharos CSV fields and retain Pharos finding IDs and appcodes.
 
@@ -36,6 +37,7 @@ The documented profile is the demo default; `--profile-id` overrides the env
 value. Without either, the CLI requires a profile explicitly. The service user
 needs org-level `UseDevinSessions` (attachments), `UseCodeScans` (ingestion), and
 `ViewCodeScans` (polling/findings). No API credentials are needed for dry-run.
+Bulk remediation additionally requires `manage_findings` on the scan.
 
 Org model: **one CVE org per LOB**, owned by the central security team, with
 access to that LOB's repositories. PCB is Personal & Commercial Banking.
@@ -51,6 +53,9 @@ python ingest.py --dry-run --profile-id csprof-test
 python ingest.py --export pharos_export.csv --profile-id "$DEVIN_INGEST_PROFILE_ID"
 python ingest.py --lob PCB --repo defense-factory/ms-user-service \
   --repo defense-factory/ms-payment-service --effort deep --wait
+python ingest.py --profile-id "$DEVIN_INGEST_PROFILE_ID" --remediate
+python ingest.py --scan-id <completed-or-running-scan-id> --remediate
+python ingest.py --dry-run --profile-id csprof-test --remediate
 ```
 
 `--repo` accepts repeatable full owner/repo names; `--lob` intersects that filter.
@@ -61,6 +66,41 @@ the request body with a placeholder attachment URL and makes no API calls.
 `--wait` polls every ten seconds until completed, failed or cancelled, then
 prints finding counts; failed/cancelled scans exit nonzero. A full backlog
 returns a clear retry-later error; no scan is automatically resubmitted.
+
+### Ingest → wait → remediate
+
+`--remediate` implies waiting, then selects all critical/high findings in the
+completed scan and starts a planner session. With exactly one match the API
+starts a fix session directly instead. The CLI prints the planner/fix session
+ID and URL, number of findings picked up, and `skipped_count`; it does not wait
+for remediation to finish. Zero matches or more than 1000 matches are rejected
+with a 400; narrow the selection if necessary.
+
+```bash
+python ingest.py --scan-id <scan-id> --remediate --severity critical,high \
+  --repo defense-factory/ms-user-service --exclude-finding-id <finding-id> \
+  --remediate-branch security/dependency-fixes --create-as-user-id <user-id>
+```
+
+`--severity` is a comma-separated, non-empty subset of critical/high/medium/low
+(default `critical,high`); `--exclude-finding-id` is repeatable. The branch and
+create-as-user options are forwarded only when provided. With `--scan-id`, no
+profile or export is needed and upload/ingestion is skipped. A single `--repo`
+may narrow that existing scan's remediation selection; multiple repos and
+`--lob` are rejected in existing-scan mode. For new scans, repo/LOB filters
+select the ingestion input and remediation covers the resulting scan.
+
+**Never call remediation before status is `completed`: the endpoint itself
+does not enforce this.** The CLI checks the direct scan-status endpoint and
+waits if needed; failed/cancelled scans exit nonzero without remediation.
+Dry-run prints both request bodies without checking status or making calls.
+The `remediate_findings` Python helper assumes its caller enforced this gate.
+
+**Billing:** remediation sessions are billed to the caller. A service user can
+use `--create-as-user-id` to start them as a user. Review scope and identity
+before running; rerunning remediation is not a dry-run and can start sessions.
+The supplied API contract has been implemented with mocked tests, not a live
+remediation call.
 
 `pharos_export.csv` preserves all 241 source findings, including no-fix rows,
 but omits `fix_type`: Pharos does not know remediation strategies. Regenerate

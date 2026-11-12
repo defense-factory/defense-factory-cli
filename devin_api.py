@@ -51,6 +51,11 @@ def _request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
                 time.sleep(2**attempt)
                 continue
         if response.status_code >= 400:
+            if response.status_code == 400 and path.endswith("/findings/remediate"):
+                raise RuntimeError(
+                    "Bulk remediation rejected (400): no matching findings or more than "
+                    f"1000 matches; narrow the selection. API detail: {response.text}"
+                )
             if response.status_code == 409 and path.endswith("/code-scans/ingestion"):
                 raise RuntimeError("Devin scan backlog is at capacity (409); retry later.")
             raise RuntimeError(
@@ -108,12 +113,35 @@ def _scan_pages(resource, **params):
         params["after"] = page["end_cursor"]
 
 
-def get_scan_status(scan_id, repo_name=None):
-    params = {"repo_name": repo_name} if repo_name else {}
-    for scan in _scan_pages("scans", **params):
-        if scan["scan_id"] == scan_id:
-            return scan
-    raise RuntimeError(f"Scan {scan_id} not found in organization")
+def get_scan_status(scan_id):
+    _, _, org_id = _credentials()
+    return _request("GET", f"/organizations/{org_id}/code-scans/{scan_id}")
+
+
+def remediation_payload(severities=("critical", "high"), repo_name=None,
+                        exclude_finding_ids=None, branch=None, create_as_user_id=None):
+    if isinstance(severities, str) or not severities or any(
+            severity not in {"critical", "high", "medium", "low"} for severity in severities):
+        raise ValueError("severities must be a non-empty sequence of critical/high/medium/low")
+    selection = {"severity": list(severities)}
+    if repo_name is not None:
+        selection["repo_name"] = repo_name
+    payload = {"select_all": selection}
+    for key, value in (("exclude_finding_ids", exclude_finding_ids), ("branch", branch),
+                       ("create_as_user_id", create_as_user_id)):
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def remediate_findings(scan_id, severities=("critical", "high"), repo_name=None,
+                       exclude_finding_ids=None, branch=None, create_as_user_id=None):
+    """Start remediation; callers must first verify that the scan completed."""
+    payload = remediation_payload(severities, repo_name, exclude_finding_ids,
+                                  branch, create_as_user_id)
+    _, _, org_id = _credentials()
+    return _request("POST", f"/organizations/{org_id}/code-scans/{scan_id}/findings/remediate",
+                    json=payload)
 
 
 def list_scan_findings(scan_id):
