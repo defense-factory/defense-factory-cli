@@ -4,6 +4,7 @@ Upload a Pharos findings CSV to Devin Ingestion Mode, create one multi-repo
 scan, wait for completion, then start remediation for critical/high findings.
 The CLI prints scan and session links; it does not wait for remediation or merge PRs.
 The CSV must include `asset_repo`; the ingestion profile must interpret its fields.
+The steps live in `quickstart.py`; `utils/devin.py` handles ingestion and API calls.
 
 ## Setup
 
