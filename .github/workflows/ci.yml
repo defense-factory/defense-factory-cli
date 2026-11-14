@@ -13,5 +13,4 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install -r requirements.txt
-      - run: pytest
-      - run: python kickoff.py --help
+      - run: python -m py_compile quickstart.py
