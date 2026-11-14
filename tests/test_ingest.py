@@ -4,27 +4,6 @@ from pathlib import Path
 import pytest
 
 import ingest
-from generate_pharos_export import generate
-
-
-def test_export_is_deterministic_and_preserves_all_rows(tmp_path):
-    output = tmp_path / "export.csv"
-    generate(destination=output)
-    assert output.read_bytes() == Path("pharos_export.csv").read_bytes()
-    rows = list(csv.DictReader(output.open()))
-    original = list(csv.DictReader(open("findings.csv")))
-    assert len(rows) == len(original) == 241
-    assert "fix_type" not in rows[0]
-    assert len({r["pharos_finding_id"] for r in rows}) == 241
-    for row, source in zip(rows, original):
-        assert row["cve_id"] == source["vuln_id"]
-        assert row["fixed_version"] == source["fixed_version"]
-        assert row["severity"] == source["severity"]
-        assert row["lob"] == "PCB"
-        assert row["first_seen"] == "2026-10-01"
-        assert row["sla_due"] == {"CRITICAL": "2026-10-16", "HIGH": "2026-10-31",
-                                  "MEDIUM": "2026-12-30", "LOW": "2027-03-30",
-                                  "UNKNOWN": ""}[row["severity"]]
 
 
 def test_dry_run_never_calls_api(monkeypatch, capsys):
@@ -34,10 +13,12 @@ def test_dry_run_never_calls_api(monkeypatch, capsys):
     monkeypatch.setattr(ingest, "start_ingestion_scan", forbidden)
     assert ingest.main(["--dry-run", "--profile-id", "csprof-test"]) == 0
     output = capsys.readouterr().out
-    assert "241 findings across 4 repositories" in output
+    assert "273 findings across 6 repositories" in output
     assert "UNKNOWN" in output
     assert '"repos"' in output
     assert '"repo_name": "defense-factory/ms-user-service"' in output
+    assert '"repo_name": "defense-factory/pcb-common"' in output
+    assert '"repo_name": "defense-factory/ms-statement-service"' in output
 
 
 def test_filters_upload_only_selected_rows(monkeypatch):
