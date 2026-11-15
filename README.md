@@ -13,9 +13,7 @@ Use Python 3.10+:
 ```bash
 python -m pip install -r requirements.txt
 export DEVIN_API_KEY='<service-user-key>'
-export DEVIN_ORG_ID=org-44fc0af4f56347e7a64186c8cc882563
 export DEVIN_API_BASE=https://test-aaron.devinenterprise.com/api/v3
-export DEVIN_INGEST_PROFILE_ID=csprof-ddebd94392fa43fca3ea63ecd70a9c04
 ```
 
 Alternatively, copy `.env.example` to `.env`, fill in the key, and run
@@ -27,10 +25,12 @@ Permissions: `UseDevinSessions`, `UseCodeScans`, `ViewCodeScans`, and `manage_fi
 ## Run
 
 ```bash
-python quickstart.py pharos_export.csv
+python quickstart.py --org pcb pharos_export.csv
 ```
 
-Omitting the path uses `pharos_export.csv`. Failed/cancelled scans exit nonzero
+`--org` (`pcb`, `wealth`, `qts`) picks the Devin org and its ingestion profile
+from `ORGS` in `quickstart.py`; ingestion profiles are org-level, so each org needs its own.
+Only `pcb` is real; `wealth` and `qts` are placeholder IDs. Omitting the path uses `pharos_export.csv`. Failed/cancelled scans exit nonzero
 without remediation. Remediation is billed to the caller; rerunning can start new sessions.
 
 Remediation sessions load the [enterprise plugin](plugins/rbc-enterprise-remediation/README.md)
