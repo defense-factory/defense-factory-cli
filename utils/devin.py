@@ -5,7 +5,7 @@ import time
 
 import requests
 
-API_URL = os.environ.get("DEVIN_API_BASE", "https://api.devin.ai/v3").rstrip("/")
+API_URL = "https://test-aaron.devinenterprise.com/api/v3"
 HEADERS = {"Authorization": f"Bearer {os.environ['DEVIN_API_KEY']}"}
 
 
