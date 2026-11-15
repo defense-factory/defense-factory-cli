@@ -29,7 +29,7 @@ python quickstart.py --org pcb pharos_export.csv
 ```
 
 `--org` (`pcb`, `wealth`, `qts`) picks the Devin org and its ingestion profile
-from `utils/orgs.py`; ingestion profiles are org-level, so each org needs its own.
+from `ORGS` in `quickstart.py`; ingestion profiles are org-level, so each org needs its own.
 Only `pcb` is real; `wealth` and `qts` are placeholder IDs. Omitting the path uses `pharos_export.csv`. Failed/cancelled scans exit nonzero
 without remediation. Remediation is billed to the caller; rerunning can start new sessions.
 
