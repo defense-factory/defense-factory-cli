@@ -2,12 +2,10 @@
 import csv
 import os
 import time
-from urllib.parse import urlsplit
 
 import requests
 
-API_URL = os.environ.get("DEVIN_API_BASE", "https://api.devin.ai/v3").rstrip("/")
-WEB_URL = "https://" + urlsplit(API_URL).netloc
+API_URL = "https://test-aaron.devinenterprise.com/api/v3"
 HEADERS = {"Authorization": f"Bearer {os.environ['DEVIN_API_KEY']}"}
 
 
@@ -42,4 +40,4 @@ def wait_for_scan(org_id, scan_id):
 def start_remediation(org_id, scan_id):
     session = call("POST", org_id, f"code-scans/{scan_id}/findings/remediate",
                    json={"select_all": {"severity": ["critical", "high"]}})
-    return f"{WEB_URL}/sessions/{session['session_id'].removeprefix('devin-')}"
+    return call("GET", org_id, f"sessions/{session['session_id']}")["url"]

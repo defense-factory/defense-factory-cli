@@ -13,12 +13,11 @@ Use Python 3.10+:
 ```bash
 python -m pip install -r requirements.txt
 export DEVIN_API_KEY='<service-user-key>'
-export DEVIN_API_BASE=https://test-aaron.devinenterprise.com/api/v3
 ```
 
 Alternatively, copy `.env.example` to `.env`, fill in the key, and run
 `set -a; source .env; set +a`. No dotenv loader is used.
-`DEVIN_API_BASE` defaults to `https://api.devin.ai/v3` when unset.
+The API base (`API_URL` in `utils/devin.py`) is hardcoded to the test-aaron enterprise.
 
 Permissions: `UseDevinSessions`, `UseCodeScans`, `ViewCodeScans`, and `manage_findings` on the scan.
 
